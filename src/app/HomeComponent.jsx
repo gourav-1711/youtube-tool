@@ -33,13 +33,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 export default function HomeComponent() {
-  const videoInfo = {
-    title: "Sample YouTube Video Title - Amazing Content",
-    duration: "10:45",
-    views: "1.2M views",
-    thumbnail: "/placeholder.svg?height=180&width=320",
-    channel: "Sample Channel",
-  };
   const [btnLoading, setBtnLoading] = useState(false);
   const [ytUrl, setYtUrl] = useState("");
   const [ytFormat, setYtFormat] = useState("mp3");
@@ -47,62 +40,70 @@ export default function HomeComponent() {
   const [preview, setPreview] = useState(false);
 
   const [apiData, setApiData] = useState(null);
+  const [downloadUrlData, setDownloadUrlData] = useState(null);
 
-  console.log(ytFormat);
+  const [downloadReady, setDownloadReady] = useState(false);
+  const [checkingStatus, setCheckingStatus] = useState(false);
+  const [finalDownloadUrl, setFinalDownloadUrl] = useState("");
+
+  const [thumbnailQuality, setThumbnailQuality] = useState("maxresdefault");
+
+  // console.log(ytFormat)
 
   const status = async (id) => {
+    setBtnLoading(true);
     const options = {
       method: "GET",
-      url: `https://youtube-to-mp315.p.rapidapi.com/status/${id}`,
+      url: "https://youtube-info-download-api.p.rapidapi.com/ajax/download.php",
+      params: {
+        format: "mp3",
+        add_info: "0",
+        url: ytUrl,
+        audio_quality: "128",
+        allow_extended_duration: "false",
+      },
       headers: {
         "x-rapidapi-key": "5f0323ef84msh745b88c630bfac5p1485abjsn7b94adffcce0",
-        "x-rapidapi-host": "youtube-to-mp315.p.rapidapi.com",
+        "x-rapidapi-host": "youtube-info-download-api.p.rapidapi.com",
       },
     };
 
     try {
       const response = await axios.request(options);
-      console.log(response.data);
+      console.log("Initial API response:", response.data);
       setApiData(response.data);
-      if (response.data.status === "CONVERTING") {
-        setTimeout(() => status(id), 3000); // recursive polling
-      } else {
-        // Done converting
-        setApiData(response.data); // now includes downloadUrl
+      // Start polling download progress if it's an mp3
+      if (ytFormat === "mp3" && response.data.progress_url) {
+        download(response.data.progress_url);
       }
     } catch (error) {
       console.error(error);
-    } finally {
-      setBtnLoading(false);
     }
   };
 
-  const convert = async () => {
-    setBtnLoading(true);
+  const download = async (progressUrl) => {
+    setCheckingStatus(true);
+    setDownloadReady(false);
 
-    const options = {
-      method: "POST",
-      url: "https://youtube-to-mp315.p.rapidapi.com/download",
-      params: {
-        url: ytUrl,
-        format: ytFormat,
-      },
-      headers: {
-        "x-rapidapi-key": "5f0323ef84msh745b88c630bfac5p1485abjsn7b94adffcce0",
-        "x-rapidapi-host": "youtube-to-mp315.p.rapidapi.com",
-        "Content-Type": "application/json",
-      },
-      data: {},
-    };
+    const interval = setInterval(async () => {
+      try {
+        const res = await axios.get(progressUrl);
+        console.log("Polling response:", res.data);
 
-    try {
-      const response = await axios.request(options);
-      // console.log(response.data);
-      // setApiData(response.data)
-      status(response.data.id);
-    } catch (error) {
-      console.error(error);
-    }
+        if (res.data.success === 1 && res.data.download_url) {
+          clearInterval(interval);
+          setFinalDownloadUrl(res.data.download_url);
+          setDownloadReady(true);
+          setCheckingStatus(false);
+          setBtnLoading(false);
+        }
+      } catch (error) {
+        console.error("Polling error:", error);
+        clearInterval(interval);
+        setCheckingStatus(false);
+        setBtnLoading(false);
+      }
+    }, 3000);
   };
 
   const [videoId, setVideoId] = useState("");
@@ -120,25 +121,46 @@ export default function HomeComponent() {
   };
 
   const apiCall = () => {
-   
-
     const id = extractYouTubeId(ytUrl);
     if (id) {
-       convert();
+      setDownloadReady(false);
+      setFinalDownloadUrl("");
+      setCheckingStatus(false);
+      setApiData(null);
+
       setVideoId(id);
       setPreview(true);
+      status(id);
     } else {
       alert("Invalid YouTube URL");
     }
   };
-const handleDirectDownload = () => {
-  const link = document.createElement("a");
-  link.href = apiData.downloadUrl; // your .mp3 URL
-  link.download = `${videoId}.mp3`; // or any name
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-};
+
+  const thumbnailUrl = videoId
+    ? `https://img.youtube.com/vi/${videoId}/${thumbnailQuality}.jpg`
+    : "";
+
+  const thumbDownload = () => {
+    const id = extractYouTubeId(ytUrl);
+    setVideoId(id);
+    setPreview(true);
+  };
+
+  const downloadThumbnail = async (quality) => {
+    const url = `https://img.youtube.com/vi/${videoId}/${quality}.jpg`;
+    const response = await fetch(url, { mode: "no-cors" });
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = `thumbnail-${videoId}-${quality}.jpg`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(blobUrl);
+  };
+
   return (
     <>
       <Header />
@@ -148,7 +170,7 @@ const handleDirectDownload = () => {
           <div className="text-center space-y-2">
             <h1 className="text-3xl font-bold">YouTube Downloader</h1>
             <p className="text-muted-foreground">
-              Download YouTube videos and audio with ease
+              Download YouTube Thumbnail and audio with ease
             </p>
             <p className="text-muted-foreground">
               Make Sure You Have Rights To Download YouTube Content
@@ -168,10 +190,8 @@ const handleDirectDownload = () => {
             <CardContent className="space-y-4">
               <div className="flex gap-2">
                 <Input
+                  type={"text"}
                   value={ytUrl}
-                  defaultValue={
-                    "https://youtu.be/JgDNFQ2RaLQ?si=3OWpyQe5NFgREn39"
-                  }
                   onChange={(e) => setYtUrl(e.target.value)}
                   placeholder="your_video_url"
                   className="flex-1"
@@ -182,7 +202,9 @@ const handleDirectDownload = () => {
                     Please wait
                   </Button>
                 ) : (
-                  <Button onClick={apiCall}>Download</Button>
+                  <Button onClick={ytFormat == "mp3" ? apiCall : thumbDownload}>
+                    Download
+                  </Button>
                 )}
               </div>
 
@@ -198,7 +220,7 @@ const handleDirectDownload = () => {
                   <SelectContent>
                     <SelectGroup>
                       <SelectLabel>Availible Format </SelectLabel>
-                      <SelectItem value="mp4">Video</SelectItem>
+                      <SelectItem value="thumbnail">Thumbnail</SelectItem>
                       <SelectItem value="mp3">Audio</SelectItem>
                     </SelectGroup>
                   </SelectContent>
@@ -215,8 +237,7 @@ const handleDirectDownload = () => {
                       title="Ed Sheeran - Sapphire (Official Music Video)"
                       frameBorder="0"
                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                      referrerpolicy="strict-origin-when-cross-origin"
-                      allowfullscreen
+                      allowFullScreen
                       className="max-w-full"
                     ></iframe>
                   </CardContent>
@@ -236,7 +257,7 @@ const handleDirectDownload = () => {
                 className="flex items-center gap-2 cursor-pointer"
               >
                 <Video className="w-4 h-4" />
-                Video Download
+                Thumbnail Download
               </TabsTrigger>
               <TabsTrigger
                 value="mp3"
@@ -247,79 +268,101 @@ const handleDirectDownload = () => {
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="mp4" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Video className="w-5 h-5" />
-                    Video Download Options
-                  </CardTitle>
-                  <CardDescription>
-                    Choose your preferred video quality and format
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid gap-3">
-                    <div className="flex items-center justify-between p-3 border rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <Badge variant="secondary">4K</Badge>
-                        <div>
-                          <p className="font-medium">Ultra HD (2160p)</p>
+            <TabsContent value="thumbnail" className="space-y-4">
+              {videoId ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Video className="w-5 h-5" />
+                      Thumbnail Download
+                    </CardTitle>
+                    <CardDescription>
+                      Select your preferred thumbnail resolution and download
+                      it.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-3">
+                      {[
+                        {
+                          label: "Ultra HD (2160p)",
+                          quality: "maxresdefault",
+                          badge: "4K",
+                        },
+                        {
+                          label: "Full HD (1080p)",
+                          quality: "hqdefault",
+                          badge: "HD",
+                        },
+                        {
+                          label: "Standard (720p)",
+                          quality: "sddefault",
+                          badge: "SD",
+                        },
+                        {
+                          label: "Mobile (480p)",
+                          quality: "mqdefault",
+                          badge: "Mobile",
+                        },
+                      ].map(({ label, quality, badge }) => (
+                        <div
+                          key={quality}
+                          className="flex items-center justify-between p-3 border rounded-lg"
+                        >
+                          <div className="flex items-center gap-3">
+                            <Badge
+                              variant={
+                                quality === "maxresdefault"
+                                  ? "secondary"
+                                  : "outline"
+                              }
+                            >
+                              {badge}
+                            </Badge>
+                            <p className="font-medium">{label}</p>
+                          </div>
+                          <a
+                            href={`https://img.youtube.com/vi/${videoId}/${quality}.jpg`}
+                            download={`thumbnail-${videoId}-${quality}.jpg`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <Button
+                              variant={
+                                quality === "maxresdefault"
+                                  ? "default"
+                                  : "outline"
+                              }
+                              className="flex items-center gap-2"
+                              
+                              onClick={() =>{  
+                                downloadThumbnail(quality)
+                                setThumbnailQuality(quality)}}
+                            >
+                              <Download className="w-4 h-4" />
+                              Download
+                            </Button>
+                          </a>
                         </div>
-                      </div>
-                      <Button className="flex items-center gap-2">
-                        <Download className="w-4 h-4" />
-                        Download
-                      </Button>
+                      ))}
                     </div>
-
-                    <div className="flex items-center justify-between p-3 border rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <Badge variant="secondary">HD</Badge>
-                        <div>
-                          <p className="font-medium">Full HD (1080p)</p>
-                        </div>
-                      </div>
-                      <Button className="flex items-center gap-2">
-                        <Download className="w-4 h-4" />
-                        Download
-                      </Button>
+                    <div>
+                      <h3 className="text-center text-muted-foreground text-sm">
+                        Preview
+                      </h3>
+                      <img
+                        src={thumbnailUrl}
+                        alt="YouTube Thumbnail"
+                        className="w-full rounded-lg mt-4"
+                      />
                     </div>
-
-                    <div className="flex items-center justify-between p-3 border rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <Badge variant="outline">SD</Badge>
-                        <div>
-                          <p className="font-medium">Standard (720p)</p>
-                        </div>
-                      </div>
-                      <Button
-                        variant="outline"
-                        className="flex items-center gap-2 bg-transparent"
-                      >
-                        <Download className="w-4 h-4" />
-                        Download
-                      </Button>
-                    </div>
-
-                    <div className="flex items-center justify-between p-3 border rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <Badge variant="outline">Mobile</Badge>
-                        <div>
-                          <p className="font-medium">Mobile (480p)</p>
-                        </div>
-                      </div>
-                      <Button
-                        variant="outline"
-                        className="flex items-center gap-2 bg-transparent"
-                      >
-                        <Download className="w-4 h-4" />
-                        Download
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="text-center border p-5">
+                  Insert a valid URL to preview
+                </div>
+              )}
             </TabsContent>
 
             <TabsContent value="mp3" className="space-y-4">
@@ -346,19 +389,27 @@ const handleDirectDownload = () => {
                         </div>
                       </div>
                       <Button
-                        onClick={() => window.open(apiData.downloadUrl)}
+                        onClick={() => {
+                          if (finalDownloadUrl) window.open(finalDownloadUrl);
+                        }}
+                        disabled={!downloadReady}
                         variant="outline"
                         className="flex items-center gap-2 bg-transparent"
                       >
-                        {apiData?.status === "CONVERTING" ? (
+                        {checkingStatus ? (
                           <>
                             <Loader2Icon className="w-4 h-4 animate-spin" />
-                            Converting...
+                            Preparing...
+                          </>
+                        ) : downloadReady ? (
+                          <>
+                            <Download className="w-4 h-4" />
+                            Download
                           </>
                         ) : (
                           <>
                             <Download className="w-4 h-4" />
-                            Download
+                            Not Ready
                           </>
                         )}
                       </Button>
