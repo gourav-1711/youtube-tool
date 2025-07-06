@@ -46,7 +46,7 @@ export default function HomeComponent() {
 
   const [preview, setPreview] = useState(false);
 
-  const [apiData , setApiData] = useState(null)
+  const [apiData, setApiData] = useState(null);
 
   console.log(ytFormat);
 
@@ -63,7 +63,13 @@ export default function HomeComponent() {
     try {
       const response = await axios.request(options);
       console.log(response.data);
-      setApiData(response.data)
+      setApiData(response.data);
+      if (response.data.status === "CONVERTING") {
+        setTimeout(() => status(id), 3000); // recursive polling
+      } else {
+        // Done converting
+        setApiData(response.data); // now includes downloadUrl
+      }
     } catch (error) {
       console.error(error);
     } finally {
@@ -79,7 +85,7 @@ export default function HomeComponent() {
       url: "https://youtube-to-mp315.p.rapidapi.com/download",
       params: {
         url: ytUrl,
-        format: "mp3",
+        format: ytFormat,
       },
       headers: {
         "x-rapidapi-key": "5f0323ef84msh745b88c630bfac5p1485abjsn7b94adffcce0",
@@ -93,7 +99,7 @@ export default function HomeComponent() {
       const response = await axios.request(options);
       // console.log(response.data);
       // setApiData(response.data)
-      status(response.data.id)
+      status(response.data.id);
     } catch (error) {
       console.error(error);
     }
@@ -114,21 +120,25 @@ export default function HomeComponent() {
   };
 
   const apiCall = () => {
-    convert();
+   
 
     const id = extractYouTubeId(ytUrl);
     if (id) {
+       convert();
       setVideoId(id);
-      setPreview(true)
+      setPreview(true);
     } else {
       alert("Invalid YouTube URL");
     }
-
-
-   
-    
   };
-
+const handleDirectDownload = () => {
+  const link = document.createElement("a");
+  link.href = apiData.downloadUrl; // your .mp3 URL
+  link.download = `${videoId}.mp3`; // or any name
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
   return (
     <>
       <Header />
@@ -325,25 +335,32 @@ export default function HomeComponent() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid gap-3">
-
-
                     <div className="flex items-center justify-between p-3 border rounded-lg">
                       <div className="flex items-center gap-3">
                         <Badge variant="outline">Standard</Badge>
                         <div>
                           <p className="font-medium">MP3 128kbps</p>
                           <p className="text-sm text-muted-foreground">
-                            Standard quality • ~7MB
+                            Standard quality •
                           </p>
                         </div>
                       </div>
-                      <Button 
-                      
+                      <Button
+                        onClick={() => window.open(apiData.downloadUrl)}
                         variant="outline"
                         className="flex items-center gap-2 bg-transparent"
                       >
-                        <Download className="w-4 h-4" />
-                        Download
+                        {apiData?.status === "CONVERTING" ? (
+                          <>
+                            <Loader2Icon className="w-4 h-4 animate-spin" />
+                            Converting...
+                          </>
+                        ) : (
+                          <>
+                            <Download className="w-4 h-4" />
+                            Download
+                          </>
+                        )}
                       </Button>
                     </div>
                   </div>
